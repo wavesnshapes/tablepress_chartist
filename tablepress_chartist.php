@@ -162,17 +162,19 @@ class TablePress_Chartist
      * @since 0.1
      */
     public static function enqueue_scripts_styles()
-    {
-        global $post;
-        if (is_a($post, 'WP_Post') && has_shortcode($post->post_content, 'table-chart')) {
-            $dir = plugin_dir_url(__FILE__);
-            wp_enqueue_script('chartist-js', $dir.'libdist/chartist.min.js', ['jquery'], self::$version, true);
-            wp_enqueue_style('chartist-css', $dir.'libdist/chartist.min.css', [], self::$version);
-            if (file_exists(WP_CONTENT_DIR.'/tablepress-chartist-custom.css')) {
-                wp_enqueue_style('chartist-custom-css', content_url('tablepress-chartist-custom.css'), ['chartist-css'], self::$version);
-            }
+	{
+    global $post;
+    if (is_a($post, 'WP_Post') && has_shortcode($post->post_content, 'table-chart')) {
+        $dir = plugin_dir_url(__FILE__);
+        wp_enqueue_script('chartist-js', $dir.'libdist/chartist.min.js', ['jquery'], self::$version, true);
+        wp_enqueue_script('chartist-tooltip-plugin', $dir.'libdist/chartist-plugin-tooltip.min.js', ['chartist-js'], self::$version, true); // Add this line
+        wp_enqueue_style('chartist-css', $dir.'libdist/chartist.min.css', [], self::$version);
+        wp_enqueue_style('chartist-tooltip-css', $dir.'libdist/chartist-plugin-tooltip.css', ['chartist-css'], self::$version); // And this line
+        if (file_exists(WP_CONTENT_DIR.'/tablepress-chartist-custom.css')) {
+            wp_enqueue_style('chartist-custom-css', content_url('tablepress-chartist-custom.css'), ['chartist-css'], self::$version);
         }
     }
+	}
 
     /**
      * Add the Extension's parameters as valid [table /] Shortcode attributes.
@@ -336,6 +338,7 @@ JS;
                 $json_chart_options[] = $option_js.': '.json_encode($value);
             }
         }
+		$json_chart_options[] = 'plugins: [Chartist.plugins.tooltip()]';
         $json_chart_options = '{ '.implode(', ', $json_chart_options).' }';
 
         // Sanitize the aspect ratio.
@@ -351,6 +354,58 @@ jQuery(document).ready(function(){
 		options = {$json_chart_options},
 		sum = function( a, b ) { return a + b; };
 	var chart = new Chartist.{$chart}( '#chartist-{$render_options['html_id']}', data, options );
+	chart.on('draw', function(data) {
+    if(data.type === 'line' || data.type === 'area') {
+        data.element.animate({
+            d: {
+                begin: 1500 * data.index,
+                dur: 1500,
+                from: data.path.clone().scale(1, 0).translate(0, data.chartRect.height()).stringify(),
+                to: data.path.clone().stringify(),
+                easing: Chartist.Svg.Easing.easeOutQuint
+            }
+        });
+    }
+    if (data.type === 'bar') {
+        data.element.attr({
+            style: 'stroke-width: 0px'
+        });
+        var strokeWidth = 10;
+
+        for (var s = 0; s < data.series.length; ++s) {
+            if (data.seriesIndex === s) {
+                data.element.animate({
+                    y2:             {
+                        begin:  s * 1500,
+                        dur:    1500,
+                        from:   data.y1,
+                        to:     data.y2,
+                        easing: Chartist.Svg.Easing.easeOutSine
+                    },
+                    'stroke-width': {
+                        begin: s * 1500,
+                        dur:   1,
+                        from:  0,
+                        to:    strokeWidth,
+                        fill:  'freeze'
+                    }
+                }, false);
+            }
+        }
+    }
+    if(data.type === 'point') {
+    data.element._node.onmouseover = function() {
+        var tooltip = document.querySelector('.chartist-tooltip');
+        tooltip.style.opacity = 1;
+        tooltip.textContent = data.value.y || data.value.x || data.value; // Display the value of the point in the tooltip
+    };
+    data.element._node.onmouseout = function() {
+        var tooltip = document.querySelector('.chartist-tooltip');
+        tooltip.style.opacity = 0;
+    };
+}
+
+});
 
 	{$animation_script}
 });
